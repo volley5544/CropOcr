@@ -1,11 +1,15 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 import 'result_page.dart';
+
 void main() {
   runApp(
     ChangeNotifierProvider(
@@ -23,24 +27,39 @@ class DrawingPage extends StatefulWidget {
   _DrawingPageState createState() => _DrawingPageState();
 }
 
-
 class _DrawingPageState extends State<DrawingPage> {
   String? _selectedField;
   GlobalKey _appBarKey = GlobalKey();
+  GlobalKey _containerKey = GlobalKey();
   double _appBarHeight = kToolbarHeight;
+  Size? _imageSize;
+  Size? _containerSize;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final appBarHeight = _appBarKey.currentContext?.size?.height ?? kToolbarHeight;
+    WidgetsBinding.instance!.addPostFrameCallback((_) {
+      final appBarHeight = _appBarKey.currentContext!.size!.height ?? kToolbarHeight;
       setState(() {
         _appBarHeight = appBarHeight;
       });
     });
   }
 
+  Future<Size> _getImageSize(File imageFile) async {
+    final Completer<Size> completer = Completer();
+    final Image image = Image.file(imageFile);
+    image.image.resolve(const ImageConfiguration()).addListener(
+      ImageStreamListener((ImageInfo info, bool _) {
+        completer.complete(Size(info.image.width.toDouble(), info.image.height.toDouble()));
+      }),
+    );
+    return completer.future;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
     return Scaffold(
       appBar: AppBar(
         key: _appBarKey,
@@ -82,38 +101,53 @@ class _DrawingPageState extends State<DrawingPage> {
               );
             }).toList(),
           ),
+          if (_imageSize != null)
+            Text('Image Size: ${_imageSize!.width} x ${_imageSize!.height}'),
+          Text('Screen Size: ${screenSize.width} x ${screenSize.height - _appBarHeight}'),
           Expanded(
             child: Consumer<DrawingModel>(
               builder: (context, drawingModel, child) {
                 return drawingModel.imageFile == null
                     ? Center(child: Text('No image selected.'))
-                    : GestureDetector(
-                  onPanStart: (details) {
-                    if (_selectedField != null) {
-                      drawingModel.startDrawing(details.localPosition, _selectedField!);
+                    : FutureBuilder<Size>(
+                  future: _getImageSize(File(drawingModel.imageFile!.path)),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.done && snapshot.hasData) {
+                      _imageSize = snapshot.data;
                     }
+                    return LayoutBuilder(
+                      builder: (context, constraints) {
+                        return GestureDetector(
+                          onPanStart: (details) {
+                            if (_selectedField != null) {
+                              drawingModel.startDrawing(details.localPosition, _selectedField!);
+                            }
+                          },
+                          onPanUpdate: (details) {
+                            drawingModel.updateDrawing(details.localPosition);
+                          },
+                          onPanEnd: (details) {
+                            drawingModel.endDrawing();
+                          },
+                          child: Container(
+                            key: _containerKey,
+                            color: Colors.blue,
+                            child: Stack(
+                              children: [
+                                Image.file(
+                                  File(drawingModel.imageFile!.path),
+                                  fit: BoxFit.cover,
+                                ),
+                                CustomPaint(
+                                  painter: DrawingPainter(drawingModel.rectangles),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    );
                   },
-                  onPanUpdate: (details) {
-                    drawingModel.updateDrawing(details.localPosition);
-                  },
-                  onPanEnd: (details) {
-                    drawingModel.endDrawing();
-                  },
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: Image.file(
-                          File(drawingModel.imageFile!.path),
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                      Positioned.fill(
-                        child: CustomPaint(
-                          painter: DrawingPainter(drawingModel.rectangles),
-                        ),
-                      ),
-                    ],
-                  ),
                 );
               },
             ),
@@ -141,6 +175,12 @@ class _DrawingPageState extends State<DrawingPage> {
       return;
     }
 
+    // Get the RenderBox of the Container using the GlobalKey
+    final containerBox = _containerKey.currentContext!.findRenderObject() as RenderBox;
+    _containerSize = containerBox.size;
+
+    // Now you can access _containerSize.width and _containerSize.height
+
     File imageFile = File(drawingModel.imageFile!.path);
     img.Image? image = img.decodeImage(await imageFile.readAsBytes());
 
@@ -150,25 +190,17 @@ class _DrawingPageState extends State<DrawingPage> {
       );
       return;
     }
-    print(_appBarHeight);
-    print(kToolbarHeight);
+
     int imageWidth = image.width;
     int imageHeight = image.height;
-    double screenWidth = MediaQuery.of(context).size.width;
-    double screenHeight = MediaQuery.of(context).size.height;
-    // print("imageWidth: $imageWidth");
-    // print("imageHeight: $imageHeight");
-    // print("screenWidth: $screenWidth");
-    // print("screenHeight: $screenHeight");
-    var request = http.MultipartRequest('POST', Uri.parse('https://69d6-115-31-145-24.ngrok-free.app/detect-position'));
-    var halfkToolbarHeight = (kToolbarHeight+_appBarHeight)/2;
+
+    var request = http.MultipartRequest('POST', Uri.parse('https://eb4d-49-231-1-82.ngrok-free.app/detect-position'));
     drawingModel.rectangleFields.forEach((rect, field) {
-      double topLeftX = rect.left * imageWidth / screenWidth;
-      double topLeftY = (rect.top+kToolbarHeight) * imageHeight / screenHeight;
-      double bottomRightX = rect.right * imageWidth / screenWidth;
-      double bottomRightY = (rect.bottom+kToolbarHeight) * imageHeight / screenHeight;
-      print("topLeftY: $topLeftY");
-      print("bottomRightY: $bottomRightY");
+      double topLeftX = rect.left * imageWidth / _containerSize!.width;
+      double topLeftY = rect.top * imageHeight / _containerSize!.height;
+      double bottomRightX = rect.right * imageWidth / _containerSize!.width;
+      double bottomRightY = rect.bottom * imageHeight / _containerSize!.height;
+
       request.fields[field] = '[[${topLeftX.toInt()},${topLeftY.toInt()}],[${bottomRightX.toInt()},${bottomRightY.toInt()}]]';
     });
 
@@ -225,8 +257,6 @@ class DrawingPainter extends CustomPainter {
   }
 }
 
-
-
 class DrawingModel with ChangeNotifier {
   XFile? _imageFile;
   List<Rect> _rectangles = [];
@@ -248,12 +278,15 @@ class DrawingModel with ChangeNotifier {
   void startDrawing(Offset startPoint, String field) {
     _currentRect = Rect.fromPoints(startPoint, startPoint);
     _currentField = field;
+    _rectangles.add(_currentRect!);
     notifyListeners();
   }
+
 
   void updateDrawing(Offset currentPoint) {
     if (_currentRect != null) {
       _currentRect = Rect.fromPoints(_currentRect!.topLeft, currentPoint);
+      _rectangles[_rectangles.length - 1] = _currentRect!;
       notifyListeners();
     }
   }
