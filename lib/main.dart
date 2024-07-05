@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -34,12 +34,16 @@ class _DrawingPageState extends State<DrawingPage> {
   double _appBarHeight = kToolbarHeight;
   Size? _imageSize;
   Size? _containerSize;
+  Rect? _draggedRect;
+  Offset? _dragStartOffset;
+  Offset? _rectStartOffset;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance!.addPostFrameCallback((_) {
-      final appBarHeight = _appBarKey.currentContext!.size!.height ?? kToolbarHeight;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final appBarHeight =
+          _appBarKey.currentContext?.size?.height ?? kToolbarHeight;
       setState(() {
         _appBarHeight = appBarHeight;
       });
@@ -51,7 +55,8 @@ class _DrawingPageState extends State<DrawingPage> {
     final Image image = Image.file(imageFile);
     image.image.resolve(const ImageConfiguration()).addListener(
       ImageStreamListener((ImageInfo info, bool _) {
-        completer.complete(Size(info.image.width.toDouble(), info.image.height.toDouble()));
+        completer.complete(
+            Size(info.image.width.toDouble(), info.image.height.toDouble()));
       }),
     );
     return completer.future;
@@ -72,7 +77,8 @@ class _DrawingPageState extends State<DrawingPage> {
           IconButton(
             icon: Icon(Icons.delete),
             onPressed: () {
-              Provider.of<DrawingModel>(context, listen: false).clearRectangles();
+              Provider.of<DrawingModel>(context, listen: false)
+                  .clearRectangles();
             },
           ),
           IconButton(
@@ -92,8 +98,14 @@ class _DrawingPageState extends State<DrawingPage> {
               });
             },
             items: <String>[
-              'car_regis', 'body_number', 'thai_ID', 'name',
-              'book_number', 'engine_number', 'car_type', 'brand'
+              'car_regis',
+              'body_number',
+              'thai_ID',
+              'name',
+              'book_number',
+              'engine_number',
+              'car_type',
+              'brand'
             ].map<DropdownMenuItem<String>>((String value) {
               return DropdownMenuItem<String>(
                 value: value,
@@ -103,32 +115,27 @@ class _DrawingPageState extends State<DrawingPage> {
           ),
           if (_imageSize != null)
             Text('Image Size: ${_imageSize!.width} x ${_imageSize!.height}'),
-          Text('Screen Size: ${screenSize.width} x ${screenSize.height - _appBarHeight}'),
+          Text(
+              'Screen Size: ${screenSize.width} x ${screenSize.height - _appBarHeight}'),
           Expanded(
             child: Consumer<DrawingModel>(
               builder: (context, drawingModel, child) {
                 return drawingModel.imageFile == null
                     ? Center(child: Text('No image selected.'))
                     : FutureBuilder<Size>(
-                  future: _getImageSize(File(drawingModel.imageFile!.path)),
+                  future:
+                  _getImageSize(File(drawingModel.imageFile!.path)),
                   builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.done && snapshot.hasData) {
+                    if (snapshot.connectionState == ConnectionState.done &&
+                        snapshot.hasData) {
                       _imageSize = snapshot.data;
                     }
                     return LayoutBuilder(
                       builder: (context, constraints) {
                         return GestureDetector(
-                          onPanStart: (details) {
-                            if (_selectedField != null) {
-                              drawingModel.startDrawing(details.localPosition, _selectedField!);
-                            }
-                          },
-                          onPanUpdate: (details) {
-                            drawingModel.updateDrawing(details.localPosition);
-                          },
-                          onPanEnd: (details) {
-                            drawingModel.endDrawing();
-                          },
+                          onTapDown: (details) => _onTapDown(details, drawingModel),
+                          onPanUpdate: (details) => _onPanUpdate(details, drawingModel),
+                          onPanEnd: (details) => _onPanEnd(details, drawingModel),
                           child: Container(
                             key: _containerKey,
                             color: Colors.blue,
@@ -139,7 +146,7 @@ class _DrawingPageState extends State<DrawingPage> {
                                   fit: BoxFit.cover,
                                 ),
                                 CustomPaint(
-                                  painter: DrawingPainter(drawingModel.rectangles),
+                                  painter: DrawingPainter(drawingModel.rectangles, drawingModel.rectangleFields),
                                 ),
                               ],
                             ),
@@ -155,6 +162,43 @@ class _DrawingPageState extends State<DrawingPage> {
         ],
       ),
     );
+  }
+
+  void _onTapDown(TapDownDetails details, DrawingModel drawingModel) {
+    final tappedRect = drawingModel.rectangles.firstWhere(
+            (rect) => rect.contains(details.localPosition),
+        orElse: () => Rect.zero);
+    if (tappedRect != Rect.zero) {
+      _draggedRect = tappedRect;
+      _dragStartOffset = details.localPosition;
+      _rectStartOffset = tappedRect.topLeft;
+    } else if (_selectedField != null) {
+      drawingModel.startDrawing(details.localPosition, _selectedField!);
+    }
+  }
+
+  void _onPanUpdate(DragUpdateDetails details, DrawingModel drawingModel) {
+    if (_draggedRect != null) {
+      final dx = details.localPosition.dx - _dragStartOffset!.dx;
+      final dy = details.localPosition.dy - _dragStartOffset!.dy;
+      final newTopLeft = Offset(
+        _rectStartOffset!.dx + dx,
+        _rectStartOffset!.dy + dy,
+      );
+      drawingModel.updateRectPosition(_draggedRect!, newTopLeft);
+    } else if (_selectedField != null) {
+      drawingModel.updateDrawing(details.localPosition);
+    }
+  }
+
+  void _onPanEnd(DragEndDetails details, DrawingModel drawingModel) {
+    if (_draggedRect != null) {
+      _draggedRect = null;
+      _dragStartOffset = null;
+      _rectStartOffset = null;
+    } else if (_selectedField != null) {
+      drawingModel.endDrawing();
+    }
   }
 
   Future<void> _pickImage(BuildContext context) async {
@@ -176,7 +220,8 @@ class _DrawingPageState extends State<DrawingPage> {
     }
 
     // Get the RenderBox of the Container using the GlobalKey
-    final containerBox = _containerKey.currentContext!.findRenderObject() as RenderBox;
+    final containerBox =
+    _containerKey.currentContext!.findRenderObject() as RenderBox;
     _containerSize = containerBox.size;
 
     // Now you can access _containerSize.width and _containerSize.height
@@ -194,17 +239,20 @@ class _DrawingPageState extends State<DrawingPage> {
     int imageWidth = image.width;
     int imageHeight = image.height;
 
-    var request = http.MultipartRequest('POST', Uri.parse('https://eb4d-49-231-1-82.ngrok-free.app/detect-position'));
+    var request = http.MultipartRequest(
+        'POST', Uri.parse('https://eb4d-49-231-1-82.ngrok-free.app/detect-position'));
     drawingModel.rectangleFields.forEach((rect, field) {
       double topLeftX = rect.left * imageWidth / _containerSize!.width;
       double topLeftY = rect.top * imageHeight / _containerSize!.height;
       double bottomRightX = rect.right * imageWidth / _containerSize!.width;
       double bottomRightY = rect.bottom * imageHeight / _containerSize!.height;
 
-      request.fields[field] = '[[${topLeftX.toInt()},${topLeftY.toInt()}],[${bottomRightX.toInt()},${bottomRightY.toInt()}]]';
+      request.fields[field] =
+      '[[${topLeftX.toInt()},${topLeftY.toInt()}],[${bottomRightX.toInt()},${bottomRightY.toInt()}]]';
     });
 
-    request.files.add(await http.MultipartFile.fromPath('image', drawingModel.imageFile!.path));
+    request.files.add(await http.MultipartFile.fromPath(
+        'image', drawingModel.imageFile!.path));
 
     http.StreamedResponse response = await request.send();
 
@@ -213,7 +261,8 @@ class _DrawingPageState extends State<DrawingPage> {
       var jsonResponse = json.decode(responseBody);
 
       if (jsonResponse['texts'] is Map<String, dynamic>) {
-        Map<String, String> detectedFields = jsonResponse['texts'].cast<String, String>();
+        Map<String, String> detectedFields =
+        jsonResponse['texts'].cast<String, String>();
 
         Navigator.push(
           context,
@@ -236,8 +285,9 @@ class _DrawingPageState extends State<DrawingPage> {
 
 class DrawingPainter extends CustomPainter {
   final List<Rect> rectangles;
+  final Map<Rect, String> rectangleFields;
 
-  DrawingPainter(this.rectangles);
+  DrawingPainter(this.rectangles, this.rectangleFields);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -246,8 +296,22 @@ class DrawingPainter extends CustomPainter {
       ..strokeWidth = 2
       ..style = PaintingStyle.stroke;
 
+    final textPainter = TextPainter(
+      textDirection: TextDirection.ltr,
+    );
+
     for (final rect in rectangles) {
       canvas.drawRect(rect, paint);
+
+      final field = rectangleFields[rect];
+      if (field != null) {
+        textPainter.text = TextSpan(
+          text: field,
+          style: TextStyle(color: Colors.red, fontSize: 16),
+        );
+        textPainter.layout();
+        textPainter.paint(canvas, rect.topLeft - Offset(0, textPainter.height));
+      }
     }
   }
 
@@ -256,6 +320,8 @@ class DrawingPainter extends CustomPainter {
     return true;
   }
 }
+
+
 
 class DrawingModel with ChangeNotifier {
   XFile? _imageFile;
@@ -282,7 +348,6 @@ class DrawingModel with ChangeNotifier {
     notifyListeners();
   }
 
-
   void updateDrawing(Offset currentPoint) {
     if (_currentRect != null) {
       _currentRect = Rect.fromPoints(_currentRect!.topLeft, currentPoint);
@@ -293,7 +358,6 @@ class DrawingModel with ChangeNotifier {
 
   void endDrawing() {
     if (_currentRect != null && _currentField != null) {
-      _rectangles.add(_currentRect!);
       _rectangleFields[_currentRect!] = _currentField!;
       _currentRect = null;
       _currentField = null;
@@ -306,4 +370,20 @@ class DrawingModel with ChangeNotifier {
     _rectangleFields.clear();
     notifyListeners();
   }
+
+  void updateRectPosition(Rect oldRect, Offset newTopLeft) {
+    final index = _rectangles.indexOf(oldRect);
+    if (index != -1) {
+      final newRect = Rect.fromLTWH(newTopLeft.dx, newTopLeft.dy, oldRect.width, oldRect.height);
+      _rectangles[index] = newRect;
+      final field = _rectangleFields.remove(oldRect);
+      if (field != null) {
+        _rectangleFields[newRect] = field;
+      }
+      notifyListeners();
+    }
+  }
+
+
 }
+
