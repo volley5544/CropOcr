@@ -49,6 +49,13 @@ class DrawingModel with ChangeNotifier {
     _rectangleFields.clear();
     notifyListeners();
   }
+  void removeLastRectangle() {
+    if (_rectangles.isNotEmpty) {
+      final lastRect = _rectangles.removeLast();
+      _rectangleFields.remove(lastRect);
+      notifyListeners();
+    }
+  }
 
   void updateRectPosition(Rect oldRect, Offset newTopLeft) {
     final index = _rectangles.indexOf(oldRect);

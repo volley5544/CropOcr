@@ -8,7 +8,7 @@ void main() {
     ChangeNotifierProvider(
       create: (context) => DrawingModel(),
       child: MaterialApp(
-        title: 'Draw Rectangles on Image',
+        title: 'Crop Image',
         home: DrawingPage(),
       ),
     ),

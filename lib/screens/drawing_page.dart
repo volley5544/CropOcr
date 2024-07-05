@@ -15,7 +15,7 @@ void main() {
     ChangeNotifierProvider(
       create: (context) => DrawingModel(),
       child: MaterialApp(
-        title: 'Draw Rectangles on Image',
+        title: 'Crop Image',
         home: DrawingPage(),
       ),
     ),
@@ -68,11 +68,17 @@ class _DrawingPageState extends State<DrawingPage> {
     return Scaffold(
       appBar: AppBar(
         key: _appBarKey,
-        title: Text('Draw Rectangles on Image'),
+        title: Text('Crop Image'),
         actions: [
           IconButton(
             icon: Icon(Icons.image),
             onPressed: () => _pickImage(context),
+          ),
+          IconButton(
+            icon: Icon(Icons.undo),
+            onPressed: () {
+              Provider.of<DrawingModel>(context, listen: false).removeLastRectangle();
+            },
           ),
           IconButton(
             icon: Icon(Icons.delete),
@@ -87,14 +93,7 @@ class _DrawingPageState extends State<DrawingPage> {
           ),
         ],
       ),
-      body: Expanded(flex: 2,
-      child:Center(child:
-      Container(
-        decoration: BoxDecoration(
-          border: Border.all(width: 1,color: Colors.black),
-        ),
-        child: Expanded(flex: 1,
-        child:
+      body: Center(child:
         Column(
         children: [
           DropdownButton<String>(
@@ -169,10 +168,9 @@ class _DrawingPageState extends State<DrawingPage> {
           ),
         ],
       ),
-        ),
+
       ),
-      ),
-      ),
+
     );
   }
 
