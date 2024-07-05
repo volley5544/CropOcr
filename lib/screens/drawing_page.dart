@@ -87,7 +87,15 @@ class _DrawingPageState extends State<DrawingPage> {
           ),
         ],
       ),
-      body: Column(
+      body: Expanded(flex: 2,
+      child:Center(child:
+      Container(
+        decoration: BoxDecoration(
+          border: Border.all(width: 1,color: Colors.black),
+        ),
+        child: Expanded(flex: 1,
+        child:
+        Column(
         children: [
           DropdownButton<String>(
             hint: Text("Select field to draw"),
@@ -113,10 +121,10 @@ class _DrawingPageState extends State<DrawingPage> {
               );
             }).toList(),
           ),
-          if (_imageSize != null)
-            Text('Image Size: ${_imageSize!.width} x ${_imageSize!.height}'),
-          Text(
-              'Screen Size: ${screenSize.width} x ${screenSize.height - _appBarHeight}'),
+          // if (_imageSize != null)
+          //   Text('Image Size: ${_imageSize!.width} x ${_imageSize!.height}'),
+          // Text(
+          //     'Screen Size: ${screenSize.width} x ${screenSize.height - _appBarHeight}'),
           Expanded(
             child: Consumer<DrawingModel>(
               builder: (context, drawingModel, child) {
@@ -160,6 +168,10 @@ class _DrawingPageState extends State<DrawingPage> {
             ),
           ),
         ],
+      ),
+        ),
+      ),
+      ),
       ),
     );
   }
