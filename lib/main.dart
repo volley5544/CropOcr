@@ -133,7 +133,7 @@ class _DrawingPageState extends State<DrawingPage> {
                     return LayoutBuilder(
                       builder: (context, constraints) {
                         return GestureDetector(
-                          onTapDown: (details) => _onTapDown(details, drawingModel),
+                          onPanStart: (details) => _onPanStart(details, drawingModel),
                           onPanUpdate: (details) => _onPanUpdate(details, drawingModel),
                           onPanEnd: (details) => _onPanEnd(details, drawingModel),
                           child: Container(
@@ -164,39 +164,28 @@ class _DrawingPageState extends State<DrawingPage> {
     );
   }
 
-  void _onTapDown(TapDownDetails details, DrawingModel drawingModel) {
+  void _onPanStart(DragStartDetails details, DrawingModel drawingModel) {
     final tappedRect = drawingModel.rectangles.firstWhere(
-            (rect) => rect.contains(details.localPosition),
-        orElse: () => Rect.zero);
+          (rect) => rect.contains(details.localPosition),
+      orElse: () => Rect.zero,
+    );
     if (tappedRect != Rect.zero) {
-      _draggedRect = tappedRect;
-      _dragStartOffset = details.localPosition;
-      _rectStartOffset = tappedRect.topLeft;
+      drawingModel.startDragging(tappedRect, details.localPosition);
     } else if (_selectedField != null) {
       drawingModel.startDrawing(details.localPosition, _selectedField!);
     }
   }
 
   void _onPanUpdate(DragUpdateDetails details, DrawingModel drawingModel) {
-    if (_draggedRect != null) {
-      final dx = details.localPosition.dx - _dragStartOffset!.dx;
-      final dy = details.localPosition.dy - _dragStartOffset!.dy;
-      final newTopLeft = Offset(
-        _rectStartOffset!.dx + dx,
-        _rectStartOffset!.dy + dy,
-      );
-      drawingModel.updateRectPosition(_draggedRect!, newTopLeft);
-    } else if (_selectedField != null) {
+    drawingModel.updateDraggedRect(details.localPosition);
+    if (_selectedField != null) {
       drawingModel.updateDrawing(details.localPosition);
     }
   }
 
   void _onPanEnd(DragEndDetails details, DrawingModel drawingModel) {
-    if (_draggedRect != null) {
-      _draggedRect = null;
-      _dragStartOffset = null;
-      _rectStartOffset = null;
-    } else if (_selectedField != null) {
+    drawingModel.endDragging();
+    if (_selectedField != null) {
       drawingModel.endDrawing();
     }
   }
@@ -329,10 +318,11 @@ class DrawingModel with ChangeNotifier {
   Map<Rect, String> _rectangleFields = {};
   Rect? _currentRect;
   String? _currentField;
-
   XFile? get imageFile => _imageFile;
   List<Rect> get rectangles => _rectangles;
   Map<Rect, String> get rectangleFields => _rectangleFields;
+  Rect? _draggedRect;
+  Offset? _dragOffset;
 
   void setImageFile(XFile imageFile) {
     _imageFile = imageFile;
@@ -383,6 +373,41 @@ class DrawingModel with ChangeNotifier {
       notifyListeners();
     }
   }
+  void startDragging(Rect rect, Offset position) {
+    _draggedRect = rect;
+    _dragOffset = rect.topLeft - position;
+    notifyListeners();
+  }
+
+  void updateDraggedRect(Offset newPosition) {
+    if (_draggedRect != null && _dragOffset != null) {
+      final newTopLeft = newPosition + _dragOffset!;
+      final newRect = Rect.fromLTWH(
+        newTopLeft.dx,
+        newTopLeft.dy,
+        _draggedRect!.width,
+        _draggedRect!.height,
+      );
+
+      final index = _rectangles.indexOf(_draggedRect!);
+      if (index != -1) {
+        _rectangles[index] = newRect;
+        final field = _rectangleFields.remove(_draggedRect!);
+        if (field != null) {
+          _rectangleFields[newRect] = field;
+        }
+        _draggedRect = newRect;
+        notifyListeners();
+      }
+    }
+  }
+
+  void endDragging() {
+    _draggedRect = null;
+    _dragOffset = null;
+    notifyListeners();
+  }
+
 
 
 }
